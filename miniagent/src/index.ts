@@ -56,6 +56,37 @@ async function main() {
     prompt: "> ",
   })
 
+  if (!process.stdin.isTTY) {
+    const chunks: string[] = []
+    for await (const chunk of process.stdin) {
+      chunks.push(chunk as string)
+    }
+    const input = chunks.join("").trim()
+
+    if (!input) {
+      process.exit(0)
+    }
+
+    try {
+      const result = await chat({
+        systemPrompt,
+        userMessage: input,
+        model: effectiveModel,
+      })
+      console.log(`\n${result.content}\n`)
+      if (result.usage) {
+        console.log(
+          `[Token 消耗: ${result.usage.total_tokens} (提示: ${result.usage.prompt_tokens}, 补全: ${result.usage.completion_tokens})]`,
+        )
+      }
+    } catch (error) {
+      console.error(
+        `\n❌ 错误: ${error instanceof Error ? error.message : String(error)}\n`,
+      )
+    }
+    process.exit(0)
+  }
+
   rl.prompt()
 
   for await (const line of rl) {
