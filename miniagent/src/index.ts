@@ -1,9 +1,9 @@
 import { createInterface } from "node:readline"
-import { chat, PromptRole, getApiConfig } from "./llm.js"
+import { streamChat, PromptRole, getApiConfig } from "./llm.js"
 import { buildSystemPrompt, listPromptRoles } from "./prompts.js"
 
 const USAGE = `
-miniagent - Stage 01: 最小可运行的 LLM CLI 对话
+miniagent - Stage 02: 流式输出的 LLM CLI 对话
 
 用法:
   npm start [选项]
@@ -44,7 +44,7 @@ async function main() {
     customPrompt,
   })
 
-  console.log(`🤖 miniagent v0.1.0`)
+  console.log(`🤖 miniagent v0.2.0`)
   console.log(`   模型: ${effectiveModel}`)
   console.log(`   角色: ${role ?? "default"}`)
   console.log(`   端点: ${baseUrl}`)
@@ -68,12 +68,18 @@ async function main() {
     }
 
     try {
-      const result = await chat({
-        systemPrompt,
-        userMessage: input,
-        model: effectiveModel,
-      })
-      console.log(`\n${result.content}\n`)
+      process.stdout.write("\n")
+      const result = await streamChat(
+        {
+          systemPrompt,
+          userMessage: input,
+          model: effectiveModel,
+        },
+        (token) => {
+          process.stdout.write(token)
+        },
+      )
+      process.stdout.write("\n\n")
       if (result.usage) {
         console.log(
           `[Token 消耗: ${result.usage.total_tokens} (提示: ${result.usage.prompt_tokens}, 补全: ${result.usage.completion_tokens})]`,
@@ -112,13 +118,18 @@ async function main() {
     }
 
     try {
-      const result = await chat({
-        systemPrompt,
-        userMessage: input,
-        model: effectiveModel,
-      })
-
-      console.log(`\n${result.content}\n`)
+      process.stdout.write("\n")
+      const result = await streamChat(
+        {
+          systemPrompt,
+          userMessage: input,
+          model: effectiveModel,
+        },
+        (token) => {
+          process.stdout.write(token)
+        },
+      )
+      process.stdout.write("\n\n")
 
       if (result.usage) {
         console.log(
