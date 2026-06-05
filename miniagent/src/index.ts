@@ -1,5 +1,5 @@
 import "dotenv/config"
-import { chat } from "./llm.js"
+import { streamChat } from "./llm.js"
 import { getSystemPrompt } from "./prompts.js"
 
 async function main() {
@@ -13,11 +13,13 @@ async function main() {
   const systemPrompt = getSystemPrompt()
 
   try {
-    const response = await chat([
+    for await (const chunk of streamChat([
       { role: "system", content: systemPrompt },
       { role: "user", content: userInput },
-    ])
-    process.stdout.write(response + "\n")
+    ])) {
+      process.stdout.write(chunk)
+    }
+    process.stdout.write("\n")
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     process.stderr.write(`错误: ${message}\n`)
