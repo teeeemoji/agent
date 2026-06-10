@@ -1,11 +1,14 @@
 import "dotenv/config"
 import * as readline from "node:readline"
-import { streamChat } from "./llm.js"
 import { getSystemPrompt } from "./prompts.js"
 import { Conversation } from "./conversation.js"
+import { createDefaultRegistry } from "./tool-registry.js"
+import { runAgent, buildSystemPrompt } from "./agent-loop.js"
 
 async function main() {
-  const systemPrompt = getSystemPrompt()
+  const basePrompt = getSystemPrompt()
+  const registry = createDefaultRegistry()
+  const systemPrompt = buildSystemPrompt(basePrompt, registry)
   const conversation = new Conversation(systemPrompt)
 
   const rl = readline.createInterface({
@@ -39,22 +42,15 @@ async function main() {
       return
     }
 
-    conversation.addUserMessage(input)
-
     try {
-      let fullResponse = ""
-      for await (const chunk of streamChat(conversation.getAllMessages())) {
-        process.stdout.write(chunk)
-        fullResponse += chunk
-      }
-      process.stdout.write("\n")
+      const result = await runAgent(conversation, input, registry, {
+        maxTurns: 10,
+      })
 
-      conversation.addAssistantMessage(fullResponse)
-
-      const tokens = conversation.estimateTokens()
       const turns = conversation.getTurnCount()
+      const tokens = conversation.estimateTokens()
       process.stdout.write(
-        `-- 第 ${turns} 轮对话，预估消耗 ${tokens} tokens --\n`
+        `-- 第 ${turns} 轮对话，Agent 使用了 ${result.turnsUsed} 个 turn，预估消耗 ${tokens} tokens --\n`
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

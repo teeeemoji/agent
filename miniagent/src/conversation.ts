@@ -21,6 +21,13 @@ export class Conversation {
     this.messages.push({ role: "assistant", content })
   }
 
+  addToolResult(toolName: string, result: string): void {
+    this.messages.push({
+      role: "user",
+      content: `[工具 ${toolName} 执行结果]:\n${result}`,
+    })
+  }
+
   getAllMessages(): ChatMessage[] {
     const messages: ChatMessage[] = []
     if (this.systemMessage) {

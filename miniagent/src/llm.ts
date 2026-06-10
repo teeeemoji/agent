@@ -1,8 +1,10 @@
 import OpenAI from "openai"
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions"
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant"
+  role: "system" | "user" | "assistant" | "tool"
   content: string
+  tool_call_id?: string
 }
 
 const client = new OpenAI({
@@ -15,7 +17,7 @@ const model = process.env.OPENAI_MODEL ?? "gpt-4o"
 export async function chat(messages: ChatMessage[]): Promise<string> {
   const response = await client.chat.completions.create({
     model,
-    messages,
+    messages: messages as ChatCompletionMessageParam[],
   })
 
   const content = response.choices[0]?.message?.content
