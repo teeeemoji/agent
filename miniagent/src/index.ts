@@ -7,6 +7,9 @@ import { runAgent, buildSystemPrompt } from "./agent-loop.js"
 import { readTool } from "./tools/read.js"
 import { writeTool } from "./tools/write.js"
 import { editTool } from "./tools/edit.js"
+import { grepTool } from "./tools/grep.js"
+import { globTool } from "./tools/glob.js"
+import { listTool } from "./tools/list.js"
 
 async function main() {
   const basePrompt = getSystemPrompt()
@@ -14,6 +17,9 @@ async function main() {
   registry.register(readTool)
   registry.register(writeTool)
   registry.register(editTool)
+  registry.register(grepTool)
+  registry.register(globTool)
+  registry.register(listTool)
   const systemPrompt = buildSystemPrompt(basePrompt)
   const conversation = new Conversation(systemPrompt)
 
