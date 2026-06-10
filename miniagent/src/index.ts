@@ -10,6 +10,7 @@ import { editTool } from "./tools/edit.js"
 import { grepTool } from "./tools/grep.js"
 import { globTool } from "./tools/glob.js"
 import { listTool } from "./tools/list.js"
+import { bashTool } from "./tools/bash.js"
 
 async function main() {
   const basePrompt = getSystemPrompt()
@@ -20,6 +21,7 @@ async function main() {
   registry.register(grepTool)
   registry.register(globTool)
   registry.register(listTool)
+  registry.register(bashTool)
   const systemPrompt = buildSystemPrompt(basePrompt)
   const conversation = new Conversation(systemPrompt)
 
