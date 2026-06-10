@@ -1,5 +1,11 @@
 import type { ChatMessage } from "./llm.js"
 
+export interface ToolCallRequest {
+  id: string
+  name: string
+  arguments: string
+}
+
 export class Conversation {
   private messages: ChatMessage[]
   private systemMessage: ChatMessage | null
@@ -17,14 +23,29 @@ export class Conversation {
     this.messages.push({ role: "user", content })
   }
 
-  addAssistantMessage(content: string): void {
-    this.messages.push({ role: "assistant", content })
+  addAssistantMessage(content: string | null, toolCalls?: ToolCallRequest[]): void {
+    const msg: ChatMessage = {
+      role: "assistant",
+      content: content,
+    }
+    if (toolCalls && toolCalls.length > 0) {
+      msg.tool_calls = toolCalls.map((tc) => ({
+        id: tc.id,
+        type: "function" as const,
+        function: {
+          name: tc.name,
+          arguments: tc.arguments,
+        },
+      }))
+    }
+    this.messages.push(msg)
   }
 
-  addToolResult(toolName: string, result: string): void {
+  addToolResult(toolCallId: string, toolName: string, result: string): void {
     this.messages.push({
-      role: "user",
-      content: `[工具 ${toolName} 执行结果]:\n${result}`,
+      role: "tool",
+      content: result,
+      tool_call_id: toolCallId,
     })
   }
 
@@ -39,11 +60,11 @@ export class Conversation {
 
   estimateTokens(): number {
     let totalChars = 0
-    if (this.systemMessage) {
+    if (this.systemMessage && typeof this.systemMessage.content === "string") {
       totalChars += this.systemMessage.content.length
     }
     for (const msg of this.messages) {
-      totalChars += msg.content.length
+      totalChars += typeof msg.content === "string" ? msg.content.length : 0
     }
     return Math.ceil(totalChars / 4)
   }

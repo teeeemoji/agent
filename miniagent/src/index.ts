@@ -4,11 +4,17 @@ import { getSystemPrompt } from "./prompts.js"
 import { Conversation } from "./conversation.js"
 import { createDefaultRegistry } from "./tool-registry.js"
 import { runAgent, buildSystemPrompt } from "./agent-loop.js"
+import { readTool } from "./tools/read.js"
+import { writeTool } from "./tools/write.js"
+import { editTool } from "./tools/edit.js"
 
 async function main() {
   const basePrompt = getSystemPrompt()
   const registry = createDefaultRegistry()
-  const systemPrompt = buildSystemPrompt(basePrompt, registry)
+  registry.register(readTool)
+  registry.register(writeTool)
+  registry.register(editTool)
+  const systemPrompt = buildSystemPrompt(basePrompt)
   const conversation = new Conversation(systemPrompt)
 
   const rl = readline.createInterface({

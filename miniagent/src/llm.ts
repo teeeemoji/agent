@@ -1,10 +1,27 @@
 import OpenAI from "openai"
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions"
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions"
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool"
-  content: string
+  content: string | null
   tool_call_id?: string
+  tool_calls?: Array<{
+    id: string
+    type: "function"
+    function: {
+      name: string
+      arguments: string
+    }
+  }>
+}
+
+export interface StreamResult {
+  content: string
+  toolCalls: Array<{
+    id: string
+    name: string
+    arguments: string
+  }>
 }
 
 const client = new OpenAI({
@@ -28,9 +45,28 @@ export async function chat(messages: ChatMessage[]): Promise<string> {
   return content
 }
 
-export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<string> {
+function decodeUnicode(str: string): string {
+  return str.replace(/\\u[\dA-Fa-f]{4}/g, (match) => {
+    return String.fromCharCode(parseInt(match.replace(/\\u/g, ""), 16))
+  })
+}
+
+export async function streamChatWithTools(
+  messages: ChatMessage[],
+  tools?: ChatCompletionTool[]
+): Promise<StreamResult> {
   const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1"
   const url = `${baseUrl}/chat/completions`
+
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    stream: true,
+  }
+
+  if (tools && tools.length > 0) {
+    body.tools = tools
+  }
 
   const response = await fetch(url, {
     method: "POST",
@@ -38,11 +74,7 @@ export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<strin
       "Content-Type": "application/json",
       "Authorization": `Bearer ${process.env.OPENAI_API_KEY ?? ""}`,
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {
@@ -56,6 +88,9 @@ export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<strin
 
   const decoder = new TextDecoder("utf-8")
   let buffer = ""
+  let fullContent = ""
+
+  const toolCallMap = new Map<number, { id: string; name: string; arguments: string }>()
 
   while (true) {
     const { done, value } = await reader.read()
@@ -71,7 +106,7 @@ export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<strin
       if (!trimmed || !trimmed.startsWith("data: ")) continue
 
       const data = trimmed.slice(6)
-      if (data === "[DONE]") return
+      if (data === "[DONE]") break
 
       let parsed: unknown
       try {
@@ -81,11 +116,53 @@ export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<strin
         continue
       }
 
-      const content = (parsed as { choices?: Array<{ delta?: { content?: string | null } }> })
-        .choices?.[0]?.delta?.content
-      if (content) {
-        yield content
+      const delta = (parsed as { choices?: Array<{ delta?: Record<string, unknown> }> })
+        .choices?.[0]?.delta
+
+      if (!delta) continue
+
+      if (typeof delta.content === "string") {
+        fullContent += delta.content
+        process.stdout.write(delta.content as string)
+      }
+
+      const toolCalls = delta.tool_calls as Array<{
+        index?: number
+        id?: string
+        function?: { name?: string; arguments?: string }
+      }> | undefined
+
+      if (toolCalls) {
+        for (const tc of toolCalls) {
+          const index = tc.index ?? 0
+          let entry = toolCallMap.get(index)
+          if (!entry) {
+            entry = { id: "", name: "", arguments: "" }
+            toolCallMap.set(index, entry)
+          }
+          if (tc.id) entry.id = tc.id
+          if (tc.function?.name) entry.name += tc.function.name
+          if (tc.function?.arguments) entry.arguments += tc.function.arguments
+        }
       }
     }
+  }
+
+  const toolCalls = Array.from(toolCallMap.values()).map((tc) => ({
+    ...tc,
+    arguments: decodeUnicode(tc.arguments),
+  }))
+
+  if (toolCalls.length > 0) {
+    process.stdout.write("\n")
+  }
+
+  return { content: fullContent, toolCalls }
+}
+
+export async function* streamChat(messages: ChatMessage[]): AsyncGenerator<string> {
+  const result = await streamChatWithTools(messages)
+  if (result.content) {
+    yield result.content
   }
 }

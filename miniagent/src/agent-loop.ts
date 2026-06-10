@@ -1,8 +1,6 @@
-import { streamChat } from "./llm.js"
+import { streamChatWithTools } from "./llm.js"
 import type { ToolRegistry } from "./tool-registry.js"
 import type { Conversation } from "./conversation.js"
-
-const TOOL_PATTERN = /TOOL:(\w+)(?:\s+(.*))?/
 
 export interface AgentTurnResult {
   finalResponse: string
@@ -21,27 +19,37 @@ export async function runAgent(
 
   for (let turn = 0; turn < maxTurns; turn++) {
     const messages = conversation.getAllMessages()
-    let fullResponse = ""
+    const tools = toolRegistry.toOpenAITools()
 
-    for await (const chunk of streamChat(messages)) {
-      process.stdout.write(chunk)
-      fullResponse += chunk
-    }
-    process.stdout.write("\n")
+    const result = await streamChatWithTools(messages, tools)
 
-    const toolMatches = parseToolCalls(fullResponse)
-
-    if (toolMatches.length === 0) {
-      conversation.addAssistantMessage(fullResponse)
-      return { finalResponse: fullResponse, turnsUsed: turn + 1 }
+    if (result.toolCalls.length === 0) {
+      conversation.addAssistantMessage(result.content || null)
+      return { finalResponse: result.content, turnsUsed: turn + 1 }
     }
 
-    conversation.addAssistantMessage(fullResponse)
+    conversation.addAssistantMessage(
+      result.content || null,
+      result.toolCalls.map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: tc.arguments,
+      }))
+    )
 
-    for (const { toolName, toolArgs } of toolMatches) {
-      const result = await toolRegistry.execute(toolName, toolArgs)
-      process.stdout.write(`  [工具 ${toolName}] ${result}\n`)
-      conversation.addToolResult(toolName, result)
+    for (const tc of result.toolCalls) {
+      let parsedArgs: Record<string, unknown> = {}
+      try {
+        parsedArgs = JSON.parse(tc.arguments)
+      } catch {
+        parsedArgs = {}
+      }
+
+      const toolResult = await toolRegistry.execute(tc.name, parsedArgs)
+
+      process.stdout.write(`  [工具 ${tc.name}] ${toolResult.result.slice(0, 200)}${toolResult.result.length > 200 ? "..." : ""}\n`)
+
+      conversation.addToolResult(tc.id, tc.name, toolResult.result)
     }
   }
 
@@ -51,30 +59,6 @@ export async function runAgent(
   return { finalResponse: warning, turnsUsed: maxTurns }
 }
 
-function parseToolCalls(text: string): Array<{ toolName: string; toolArgs: string }> {
-  const results: Array<{ toolName: string; toolArgs: string }> = []
-  const regex = /TOOL:(\w+)(?:\s+([^\n]*))?/g
-  let match: RegExpExecArray | null
-  while ((match = regex.exec(text)) !== null) {
-    const toolName = match[1]
-    const toolArgs = (match[2] ?? "").trim()
-    if (toolName) {
-      results.push({ toolName, toolArgs })
-    }
-  }
-  return results
-}
-
-export function buildSystemPrompt(basePrompt: string, registry: ToolRegistry): string {
-  const toolDescriptions = registry.getToolDescriptions()
-  return `${basePrompt}
-
-当前可用的工具:
-${toolDescriptions}
-
-当需要调用工具时，请在回复中使用以下格式（可出现在回复的任意位置）:
-TOOL:<工具名> <参数>
-
-工具调用后，工具的执行结果会自动注入到你的上下文中，你可以基于结果继续生成回复。
-如果不需要调用工具，直接回答即可。`
+export function buildSystemPrompt(basePrompt: string): string {
+  return basePrompt
 }
