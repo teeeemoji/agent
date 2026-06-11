@@ -1,7 +1,6 @@
 import "dotenv/config"
 import * as readline from "node:readline"
 import * as path from "node:path"
-import * as fs from "node:fs"
 import { getSystemPrompt } from "./prompts.js"
 import { Conversation } from "./conversation.js"
 import { createDefaultRegistry } from "./tool-registry.js"
@@ -15,6 +14,8 @@ import { globTool } from "./tools/glob.js"
 import { listTool } from "./tools/list.js"
 import { bashTool } from "./tools/bash.js"
 import { createProvider } from "./provider/provider-factory.js"
+import { getProviderResolver } from "./provider/provider-resolver.js"
+import { getAuthManager } from "./provider/auth-manager.js"
 import type { ProviderConfig } from "./provider/provider-factory.js"
 
 async function main() {
@@ -35,22 +36,28 @@ async function main() {
   PermissionManager.createDefaultConfigFile(configDir)
   const permissionManager = PermissionManager.fromFile(configPath)
 
-  const providerConfigPath = path.join(configDir, "config.json")
-  if (!fs.existsSync(providerConfigPath)) {
-    const defaultConfig: ProviderConfig = {
-      provider: "openai",
-      model: process.env.OPENAI_MODEL ?? "gpt-4o",
-    }
-    fs.mkdirSync(configDir, { recursive: true })
-    fs.writeFileSync(
-      providerConfigPath,
-      JSON.stringify(defaultConfig, null, 2) + "\n",
-      "utf-8"
-    )
+  const resolver = getProviderResolver()
+  const resolved = resolver.resolve()
+  const providerConfig: ProviderConfig = {
+    provider: resolved.provider,
+    model: resolved.modelId,
   }
-  const providerConfig = JSON.parse(
-    fs.readFileSync(providerConfigPath, "utf-8")
-  ) as ProviderConfig
+
+  const authMgr = getAuthManager()
+  const authInfo = authMgr.getAuthInfo(resolved.provider)
+
+  if (!authInfo.info.apiKey && authInfo.source === "none") {
+    const authProviders = new Set(["ollama", "lmstudio", "vllm"])
+    if (!authProviders.has(resolved.provider)) {
+      process.stdout.write(
+        `警告: Provider "${resolved.provider}" 未配置 API Key。\n`
+      )
+      process.stdout.write(
+        `请设置环境变量或创建 ~/.miniagent/auth.json 文件。\n`
+      )
+    }
+  }
+
   const provider = createProvider(providerConfig)
 
   const rl = readline.createInterface({
@@ -69,7 +76,9 @@ async function main() {
 
   process.stdout.write(`Agent 已就绪，输入 /exit 退出，输入 /clear 清空对话\n`)
   process.stdout.write(`System: ${systemPrompt}\n`)
-  process.stdout.write(`Provider: ${providerConfig.provider}, Model: ${providerConfig.model ?? process.env.OPENAI_MODEL ?? "gpt-4o"}\n`)
+  process.stdout.write(
+    `Provider: ${resolved.provider}, Model: ${resolved.modelId}, Auth: ${authInfo.source}\n`
+  )
   process.stdout.write(`权限配置: ${configPath}\n`)
   rl.prompt()
 

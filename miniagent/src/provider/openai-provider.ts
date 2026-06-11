@@ -79,7 +79,10 @@ export class OpenAIProvider implements IProvider {
       if (response.status === 429) {
         throw new Error(`[速率限制] API 返回 429，请稍后重试`)
       }
-      throw new Error(`[API 错误] ${response.status} ${response.statusText}`)
+      const errorBody = await response.text().catch(() => "")
+      throw new Error(
+        `[API 错误] ${response.status} ${response.statusText}${errorBody ? `: ${errorBody.slice(0, 500)}` : ""}`
+      )
     }
 
     const reader = response.body?.getReader()
