@@ -1,6 +1,7 @@
 import "dotenv/config"
 import * as readline from "node:readline"
 import * as path from "node:path"
+import * as fs from "node:fs"
 import { getSystemPrompt } from "./prompts.js"
 import { Conversation } from "./conversation.js"
 import { createDefaultRegistry } from "./tool-registry.js"
@@ -13,6 +14,8 @@ import { grepTool } from "./tools/grep.js"
 import { globTool } from "./tools/glob.js"
 import { listTool } from "./tools/list.js"
 import { bashTool } from "./tools/bash.js"
+import { createProvider } from "./provider/provider-factory.js"
+import type { ProviderConfig } from "./provider/provider-factory.js"
 
 async function main() {
   const basePrompt = getSystemPrompt()
@@ -32,6 +35,24 @@ async function main() {
   PermissionManager.createDefaultConfigFile(configDir)
   const permissionManager = PermissionManager.fromFile(configPath)
 
+  const providerConfigPath = path.join(configDir, "config.json")
+  if (!fs.existsSync(providerConfigPath)) {
+    const defaultConfig: ProviderConfig = {
+      provider: "openai",
+      model: process.env.OPENAI_MODEL ?? "gpt-4o",
+    }
+    fs.mkdirSync(configDir, { recursive: true })
+    fs.writeFileSync(
+      providerConfigPath,
+      JSON.stringify(defaultConfig, null, 2) + "\n",
+      "utf-8"
+    )
+  }
+  const providerConfig = JSON.parse(
+    fs.readFileSync(providerConfigPath, "utf-8")
+  ) as ProviderConfig
+  const provider = createProvider(providerConfig)
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -48,6 +69,7 @@ async function main() {
 
   process.stdout.write(`Agent 已就绪，输入 /exit 退出，输入 /clear 清空对话\n`)
   process.stdout.write(`System: ${systemPrompt}\n`)
+  process.stdout.write(`Provider: ${providerConfig.provider}, Model: ${providerConfig.model ?? process.env.OPENAI_MODEL ?? "gpt-4o"}\n`)
   process.stdout.write(`权限配置: ${configPath}\n`)
   rl.prompt()
 
@@ -78,6 +100,7 @@ async function main() {
         input,
         registry,
         permissionManager,
+        provider,
         { maxTurns: 10, askConfirm }
       )
 

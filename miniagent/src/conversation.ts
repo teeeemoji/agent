@@ -1,4 +1,4 @@
-import type { ChatMessage } from "./llm.js"
+import type { ChatMessage } from "./provider/types.js"
 
 export interface ToolCallRequest {
   id: string

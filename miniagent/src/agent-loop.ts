@@ -1,4 +1,4 @@
-import { streamChatWithTools } from "./llm.js"
+import type { IProvider } from "./provider/types.js"
 import type { ToolRegistry } from "./tool-registry.js"
 import type { Conversation } from "./conversation.js"
 import { PermissionManager } from "./permission/permission-manager.js"
@@ -18,6 +18,7 @@ export async function runAgent(
   userInput: string,
   toolRegistry: ToolRegistry,
   permissionManager: PermissionManager,
+  provider: IProvider,
   options?: AgentOptions
 ): Promise<AgentTurnResult> {
   const maxTurns = options?.maxTurns ?? 10
@@ -28,7 +29,7 @@ export async function runAgent(
     const messages = conversation.getAllMessages()
     const tools = toolRegistry.toOpenAITools()
 
-    const result = await streamChatWithTools(messages, tools)
+    const result = await provider.streamChat(messages, tools)
 
     if (result.toolCalls.length === 0) {
       conversation.addAssistantMessage(result.content || null)
