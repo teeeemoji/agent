@@ -1,3 +1,4 @@
 .trae
 node_modules
 .env
+.miniagent/

@@ -1,9 +1,11 @@
 import "dotenv/config"
 import * as readline from "node:readline"
+import * as path from "node:path"
 import { getSystemPrompt } from "./prompts.js"
 import { Conversation } from "./conversation.js"
 import { createDefaultRegistry } from "./tool-registry.js"
 import { runAgent, buildSystemPrompt } from "./agent-loop.js"
+import { PermissionManager } from "./permission/permission-manager.js"
 import { readTool } from "./tools/read.js"
 import { writeTool } from "./tools/write.js"
 import { editTool } from "./tools/edit.js"
@@ -25,14 +27,28 @@ async function main() {
   const systemPrompt = buildSystemPrompt(basePrompt)
   const conversation = new Conversation(systemPrompt)
 
+  const configDir = path.join(process.cwd(), ".miniagent")
+  const configPath = path.join(configDir, "permissions.json")
+  PermissionManager.createDefaultConfigFile(configDir)
+  const permissionManager = PermissionManager.fromFile(configPath)
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
     prompt: "> ",
   })
 
+  const askConfirm = (question: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      rl.question(`${question} (y/n) `, (answer) => {
+        resolve(answer.trim().toLowerCase().startsWith("y"))
+      })
+    })
+  }
+
   process.stdout.write(`Agent 已就绪，输入 /exit 退出，输入 /clear 清空对话\n`)
   process.stdout.write(`System: ${systemPrompt}\n`)
+  process.stdout.write(`权限配置: ${configPath}\n`)
   rl.prompt()
 
   rl.on("line", async (line) => {
@@ -57,9 +73,13 @@ async function main() {
     }
 
     try {
-      const result = await runAgent(conversation, input, registry, {
-        maxTurns: 10,
-      })
+      const result = await runAgent(
+        conversation,
+        input,
+        registry,
+        permissionManager,
+        { maxTurns: 10, askConfirm }
+      )
 
       const turns = conversation.getTurnCount()
       const tokens = conversation.estimateTokens()
